@@ -1,16 +1,20 @@
 Dapper - a simple object mapper for .Net
 ========================================
 
+Release Notes
+-------------
+
+[Located at stackexchange.github.io/Dapper](https://stackexchange.github.io/Dapper/)
+
+
 Features
 --------
-Dapper is a [single file](https://github.com/SamSaffron/dapper-dot-net/blob/master/Dapper/SqlMapper.cs) you can drop in to your project that will extend your IDbConnection interface.
+Dapper is a [NuGet library](https://www.nuget.org/packages/Dapper) that you can add in to your project that will extend your `IDbConnection` interface.
 
 It provides 3 helpers:
 
 Execute a query and map the results to a strongly typed List
 ------------------------------------------------------------
-
-Note: all extension methods assume the connection is already open, they will fail if the connection is closed.
 
 ```csharp
 public static IEnumerable<T> Query<T>(this IDbConnection cnn, string sql, object param = null, SqlTransaction transaction = null, bool buffered = true)
@@ -124,7 +128,7 @@ The performance tests are broken in to 3 lists:
 	<tr>
 		<td>Hand coded (using a <code>SqlDataReader</code>)</td>
 		<td>47ms</td>
-		<td rowspan="9"><a href="http://www.toptensoftware.com/Articles/94/PetaPoco-More-Speed">Can be faster</a></td>
+		<td rowspan="9"><a href="http://www.toptensoftware.com/blog/posts/94-PetaPoco-More-Speed">Can be faster</a></td>
 	</tr>
 	<tr>
 		<td>Dapper <code>ExecuteMapperQuery<Post></code></td>
@@ -174,7 +178,7 @@ The performance tests are broken in to 3 lists:
 		<td rowspan="3">&nbsp;</td>
 	</tr>
 	<tr>
-		<td><a href="http://blog.wekeroad.com/helpy-stuff/and-i-shall-call-it-massive">Massive</a></td>
+		<td><a href="https://github.com/FransBouma/Massive">Massive</a></td>
 		<td>52ms</td>
 	</tr>
 	<tr>
@@ -219,9 +223,11 @@ The performance tests are broken in to 3 lists:
 	</tr>
 </table>
 
-Performance benchmarks are available [here](https://github.com/SamSaffron/dapper-dot-net/blob/master/Tests/PerformanceTests.cs)
+Performance benchmarks are available [here](https://github.com/StackExchange/dapper-dot-net/blob/master/Dapper.Tests/PerformanceTests.cs).
 
-Feel free to submit patches that include other ORMs - when running benchmarks, be sure to compile in Release and not attach a debugger (ctrl F5)
+Feel free to submit patches that include other ORMs - when running benchmarks, be sure to compile in Release and not attach a debugger (ctrl F5).
+
+Alternatively, you might prefer Frans Bouma's [RawDataAccessBencher](https://github.com/FransBouma/RawDataAccessBencher) test suite or [OrmBenchmark](https://github.com/InfoTechBridge/OrmBenchmark).
 
 Parameterized queries
 ---------------------
@@ -234,12 +240,12 @@ new {A = 1, B = "b"} // A will be mapped to the param @A, B to the param @B
 
 List Support
 ------------
-Dapper allow you to pass in IEnumerable<int> and will automatically parameterize your query.
+Dapper allows you to pass in IEnumerable<int> and will automatically parameterize your query.
 
 For example:
 
 ```csharp
-connection.Query<int>("select * from (select 1 as Id union all select 2 union all select 3) as X where Id in @Ids", new { Ids = new int[] { 1, 2, 3 });
+connection.Query<int>("select * from (select 1 as Id union all select 2 union all select 3) as X where Id in @Ids", new { Ids = new int[] { 1, 2, 3 } });
 ```
 
 Will be translated to:
@@ -260,6 +266,40 @@ Dapper allows you to map a single row to multiple objects. This is a key feature
 
 Example:
 
+Consider 2 classes: `Post` and `User`
+
+```csharp
+class Post
+{
+    public int Id { get; set; }
+    public string Title { get; set; }
+    public string Content { get; set; }
+    public User Owner { get; set; }
+}
+
+class User
+{
+    public int Id { get; set; }
+    public string Name { get; set; }
+}
+```
+
+Now let us say that we want to map a query that joins both the posts and the users table. Until now if we needed to combine the result of 2 queries, we'd need a new object to express it but it makes more sense in this case to put the `User` object inside the `Post` object.
+
+This is the user case for multi mapping. You tell dapper that the query returns a `Post` and a `User` object and then give it a function describing what you want to do with each of the rows containing both a `Post` and a `User` object. In our case, we want to take the user object and put it inside the post object. So we write the function: 
+
+```csharp
+(post, user) => { post.Owner = user; return post; }
+```
+
+The 3 type arguments to the `Query` method specify what objects dapper should use to deserialize the row and what is going to be returned. We're going to interpret both rows as a combination of `Post` and `User` and we're returning back a `Post` object. Hence the type declaration becomes
+
+```csharp
+<Post, User, Post>
+```
+
+Everything put together, looks like this:
+
 ```csharp
 var sql = 
 @"select * from #Posts p 
@@ -275,7 +315,7 @@ post.Owner.Name.IsEqualTo("Sam");
 post.Owner.Id.IsEqualTo(99);
 ```
 
-**important note** Dapper assumes your Id columns are named "Id" or "id", if your primary key is different or you would like to split the wide row at point other than "Id", use the optional 'splitOn' parameter.
+Dapper is able to split the returned row by making an assumption that your Id columns are named `Id` or `id`, if your primary key is different or you would like to split the wide row at point other than `Id`, use the optional `splitOn` parameter.
 
 Multiple Results
 ---------------------
@@ -301,11 +341,11 @@ using (var multi = connection.QueryMultiple(sql, new {id=selectedId}))
 
 Stored Procedures
 ---------------------
-Dapper supports fully stored procs:
+Dapper fully supports stored procs:
 
 ```csharp
 var user = cnn.Query<User>("spGetUser", new {Id = 1}, 
-        commandType: CommandType.StoredProcedure).First();}}}
+        commandType: CommandType.StoredProcedure).SingleOrDefault();
 ```
 
 If you want something more fancy, you can do:
@@ -316,7 +356,7 @@ p.Add("@a", 11);
 p.Add("@b", dbType: DbType.Int32, direction: ParameterDirection.Output);
 p.Add("@c", dbType: DbType.Int32, direction: ParameterDirection.ReturnValue);
 
-cnn.Execute("spMagicProc", p, commandType: commandType.StoredProcedure); 
+cnn.Execute("spMagicProc", p, commandType: CommandType.StoredProcedure); 
 
 int b = p.Get<int>("@b");
 int c = p.Get<int>("@c"); 
@@ -330,28 +370,70 @@ Dapper supports varchar params, if you are executing a where clause on a varchar
 Query<Thing>("select * from Thing where Name = @Name", new {Name = new DbString { Value = "abcde", IsFixedLength = true, Length = 10, IsAnsi = true });
 ```
 
-On Sql Server it is crucial to use the unicode when querying unicode and ansi when querying non unicode.
+On SQL Server it is crucial to use the unicode when querying unicode and ansi when querying non unicode.
+
+Type Switching Per Row
+---------------------
+
+Usually you'll want to treat all rows from a given table as the same data type. However, there are some circumstances where it's useful to be able to parse different rows as different data types. This is where `IDataReader.GetRowParser` comes in handy.
+
+Imagine you have a database table named "Shapes" with the columns: `Id`, `Type`, and `Data`, and you want to parse its rows into `Circle`, `Square`, or `Triangle` objects based on the value of the Type column.
+
+```csharp
+var shapes = new List<IShape>();
+using (var reader = connection.ExecuteReader("select * from Shapes"))
+{
+    // Generate a row parser for each type you expect.
+    // The generic type <IShape> is what the parser will return.
+    // The argument (typeof(*)) is the concrete type to parse.
+    var circleParser = reader.GetRowParser<IShape>(typeof(Circle));
+    var squareParser = reader.GetRowParser<IShape>(typeof(Square));
+    var triangleParser = reader.GetRowParser<IShape>(typeof(Triangle));
+  	
+  	var typeColumnIndex = reader.GetOrdinal("Type");
+  	
+  	while (reader.Read())
+    {
+        IShape shape;
+        var type = (ShapeType)reader.GetInt32(typeColumnIndex);
+        switch (type)
+        {
+          	case ShapeType.Circle:
+            	shape = circleParser(reader);
+            	break;
+            case ShapeType.Square:
+            	shape = squareParser(reader);
+            	break;
+          	case ShapeType.Triangle:
+            	shape = triangleParser(reader);
+            	break;
+          	default:
+            	throw new NotImplementedException();
+        }
+      
+      	shapes.Add(shape);
+    }
+}
+```
 
 Limitations and caveats
 ---------------------
 Dapper caches information about every query it runs, this allow it to materialize objects quickly and process parameters quickly. The current implementation caches this information in a ConcurrentDictionary object. The objects it stores are never flushed. If you are generating SQL strings on the fly without using parameters it is possible you will hit memory issues. We may convert the dictionaries to an LRU Cache.
 
-Dapper's simplicity means that many feature that ORMs ship with are stripped out, there is no identity map, there are no helpers for update / select and so on.
+Dapper's simplicity means that many feature that ORMs ship with are stripped out. It worries  about the 95% scenario, and gives you the tools you need most of the time. It doesn't attempt to solve every problem.
 
-Dapper does not manage your connection's lifecycle, it assumes the connection it gets is open AND has no existing datareaders enumerating (unless MARS is enabled)
-
-Will dapper work with my db provider?
+Will Dapper work with my DB provider?
 ---------------------
-Dapper has no DB specific implementation details, it works across all .net ado providers including sqlite, sqlce, firebird, oracle, MySQL and SQL Server
+Dapper has no DB specific implementation details, it works across all .NET ADO providers including [SQLite](http://www.sqlite.org/), SQL CE, Firebird, Oracle, MySQL, PostgreSQL and SQL Server.
 
 Do you have a comprehensive list of examples?
 ---------------------
-Dapper has a comprehensive test suite in the [test project](https://github.com/SamSaffron/dapper-dot-net/blob/master/Tests/Tests.cs)
+Dapper has a comprehensive test suite in the [test project](https://github.com/StackExchange/dapper-dot-net/blob/master/Dapper.Tests/Tests.cs)
 
 Who is using this?
 ---------------------
 Dapper is in production use at:
 
-[Stack Overflow](http://stackoverflow.com/), [xpfest.com](http://www.xapfest.com/), [helpdesk](http://www.jitbit.com/helpdesk-software/)
+[Stack Overflow](http://stackoverflow.com/), [helpdesk](https://www.jitbit.com/web-helpdesk/)
 
 (if you would like to be listed here let me know)
